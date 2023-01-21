@@ -1,5 +1,5 @@
 # telnetsrv
-This is provides moderately-competent Telnet server and client objects, adequate to replace the LNet implementation. Operation may be threaded or polled.
+This provides moderately-competent Telnet server and client objects, adequate to replace the LNet implementation. Operation may be threaded or polled.
 
 Both server and client include hooks which allow telnet option handlers to be defined, including support for the standard DO/DONT/WILL/WONT options and suboptions such as the terminal type. This has been tested with- as a specific example- a client program connecting to the Hercules terminal emulator.
 
