@@ -1,0 +1,104 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CONFIG>
+  <ProjectOptions>
+    <Version Value="12"/>
+    <General>
+      <Flags>
+        <MainUnitHasCreateFormStatements Value="False"/>
+        <MainUnitHasTitleStatement Value="False"/>
+        <LRSInOutputDirectory Value="False"/>
+        <CompatibilityMode Value="True"/>
+      </Flags>
+      <SessionStorage Value="InProjectDir"/>
+      <Title Value="TelnetTest"/>
+      <UseAppBundle Value="False"/>
+    </General>
+    <BuildModes Count="1">
+      <Item1 Name="default" Default="True"/>
+    </BuildModes>
+    <PublishOptions>
+      <Version Value="2"/>
+    </PublishOptions>
+    <RunParams>
+      <local>
+        <LaunchingApplication PathPlusParams="/usr/X11R6/bin/xterm -T &apos;Lazarus Run Output&apos; -e $(LazarusDir)/tools/runwait.sh $(TargetCmdLine)"/>
+      </local>
+      <FormatVersion Value="2"/>
+      <Modes Count="1">
+        <Mode0 Name="default">
+          <local>
+            <LaunchingApplication PathPlusParams="/usr/X11R6/bin/xterm -T &apos;Lazarus Run Output&apos; -e $(LazarusDir)/tools/runwait.sh $(TargetCmdLine)"/>
+          </local>
+        </Mode0>
+      </Modes>
+    </RunParams>
+    <Units Count="5">
+      <Unit0>
+        <Filename Value="telnettest.lpr"/>
+        <IsPartOfProject Value="True"/>
+        <UnitName Value="TelnetTest"/>
+      </Unit0>
+      <Unit1>
+        <Filename Value="telnetcommon.pas"/>
+        <IsPartOfProject Value="True"/>
+        <UnitName Value="TelnetCommon"/>
+      </Unit1>
+      <Unit2>
+        <Filename Value="telnetclient.pas"/>
+        <IsPartOfProject Value="True"/>
+        <UnitName Value="TelnetClient"/>
+      </Unit2>
+      <Unit3>
+        <Filename Value="telnetbuffer.pas"/>
+        <IsPartOfProject Value="True"/>
+        <UnitName Value="TelnetBuffer"/>
+      </Unit3>
+      <Unit4>
+        <Filename Value="clientoptionhandlers.inc"/>
+        <IsPartOfProject Value="True"/>
+      </Unit4>
+    </Units>
+  </ProjectOptions>
+  <CompilerOptions>
+    <Version Value="11"/>
+    <Target>
+      <Filename Value="telnettest-$(TargetCPU)-$(TargetOS)"/>
+    </Target>
+    <SearchPaths>
+      <IncludeFiles Value="$(ProjOutDir)"/>
+      <UnitOutputDirectory Value="lib/$(TargetCPU)-$(TargetOS)"/>
+    </SearchPaths>
+    <Parsing>
+      <SyntaxOptions>
+        <IncludeAssertionCode Value="True"/>
+        <UseAnsiStrings Value="False"/>
+      </SyntaxOptions>
+    </Parsing>
+    <CodeGeneration>
+      <Checks>
+        <IOChecks Value="True"/>
+        <RangeChecks Value="True"/>
+        <OverflowChecks Value="True"/>
+      </Checks>
+    </CodeGeneration>
+    <Linking>
+      <Options>
+        <PassLinkerOptions Value="True"/>
+        <LinkerOptions Value="--build-id"/>
+      </Options>
+    </Linking>
+    <Other>
+      <CustomOptions Value="-dHAS_SVN
+-dHAS_FPC_SVN
+-vq"/>
+      <ExecuteBefore>
+        <Command Value="/bin/sh -c &quot;echo -n C`svnversion -n`C |tr A-G %-+ >project_svnrevision.inc &amp; echo -n C`svnversion -n $FPCSrcDir()`C |tr A-G %-+>fpc_svnrevision.inc&quot;"/>
+        <CompileReasons Run="False"/>
+      </ExecuteBefore>
+      <ExecuteAfter>
+        <Command Value="date"/>
+        <CompileReasons Run="False"/>
+      </ExecuteAfter>
+    </Other>
+  </CompilerOptions>
+</CONFIG>

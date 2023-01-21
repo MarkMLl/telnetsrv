@@ -1,0 +1,122 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CONFIG>
+  <ProjectOptions>
+    <Version Value="12"/>
+    <General>
+      <Flags>
+        <MainUnitHasCreateFormStatements Value="False"/>
+        <MainUnitHasTitleStatement Value="False"/>
+        <LRSInOutputDirectory Value="False"/>
+        <CompatibilityMode Value="True"/>
+      </Flags>
+      <SessionStorage Value="InProjectDir"/>
+      <Title Value="telnetdemo"/>
+      <UseAppBundle Value="False"/>
+    </General>
+    <BuildModes Count="1">
+      <Item1 Name="default" Default="True"/>
+    </BuildModes>
+    <PublishOptions>
+      <Version Value="2"/>
+    </PublishOptions>
+    <RunParams>
+      <local>
+        <LaunchingApplication PathPlusParams="/usr/X11R6/bin/xterm -T &apos;Lazarus Run Output&apos; -e $(LazarusDir)/tools/runwait.sh $(TargetCmdLine)"/>
+      </local>
+      <FormatVersion Value="2"/>
+      <Modes Count="1">
+        <Mode0 Name="default">
+          <local>
+            <LaunchingApplication PathPlusParams="/usr/X11R6/bin/xterm -T &apos;Lazarus Run Output&apos; -e $(LazarusDir)/tools/runwait.sh $(TargetCmdLine)"/>
+          </local>
+        </Mode0>
+      </Modes>
+    </RunParams>
+    <Units Count="9">
+      <Unit0>
+        <Filename Value="telnetdemo.lpr"/>
+        <IsPartOfProject Value="True"/>
+      </Unit0>
+      <Unit1>
+        <Filename Value="telnetserver.pas"/>
+        <IsPartOfProject Value="True"/>
+        <UnitName Value="TelnetServer"/>
+      </Unit1>
+      <Unit2>
+        <Filename Value="telnetbuffer.pas"/>
+        <IsPartOfProject Value="True"/>
+        <UnitName Value="TelnetBuffer"/>
+      </Unit2>
+      <Unit3>
+        <Filename Value="telnettextrec.pas"/>
+        <IsPartOfProject Value="True"/>
+        <UnitName Value="TelnetTextRec"/>
+      </Unit3>
+      <Unit4>
+        <Filename Value="telnetprivs.pas"/>
+        <IsPartOfProject Value="True"/>
+        <UnitName Value="TelnetPrivs"/>
+      </Unit4>
+      <Unit5>
+        <Filename Value="telnetcommon.pas"/>
+        <IsPartOfProject Value="True"/>
+        <UnitName Value="TelnetCommon"/>
+      </Unit5>
+      <Unit6>
+        <Filename Value="serveroptionhandlers.inc"/>
+        <IsPartOfProject Value="True"/>
+      </Unit6>
+      <Unit7>
+        <Filename Value="libcapdynamic.pas"/>
+        <IsPartOfProject Value="True"/>
+        <UnitName Value="LibCapDynamic"/>
+      </Unit7>
+      <Unit8>
+        <Filename Value="dynamicmodule.pas"/>
+        <IsPartOfProject Value="True"/>
+        <UnitName Value="DynamicModule"/>
+      </Unit8>
+    </Units>
+  </ProjectOptions>
+  <CompilerOptions>
+    <Version Value="11"/>
+    <Target>
+      <Filename Value="telnetdemo-$(TargetCPU)-$(TargetOS)"/>
+    </Target>
+    <SearchPaths>
+      <IncludeFiles Value="$(ProjOutDir)"/>
+      <OtherUnitFiles Value="../dynamod"/>
+      <UnitOutputDirectory Value="lib/$(TargetCPU)-$(TargetOS)"/>
+    </SearchPaths>
+    <Parsing>
+      <SyntaxOptions>
+        <IncludeAssertionCode Value="True"/>
+        <UseAnsiStrings Value="False"/>
+      </SyntaxOptions>
+    </Parsing>
+    <CodeGeneration>
+      <Checks>
+        <IOChecks Value="True"/>
+        <RangeChecks Value="True"/>
+        <OverflowChecks Value="True"/>
+      </Checks>
+    </CodeGeneration>
+    <Linking>
+      <Options>
+        <PassLinkerOptions Value="True"/>
+        <LinkerOptions Value="--build-id"/>
+      </Options>
+    </Linking>
+    <Other>
+      <CustomOptions Value="-dUSE_DYNAMIC_LIBCAP
+-vq"/>
+      <ExecuteBefore>
+        <CompileReasons Run="False"/>
+      </ExecuteBefore>
+      <ExecuteAfter>
+        <Command Value="date"/>
+        <CompileReasons Run="False"/>
+      </ExecuteAfter>
+    </Other>
+  </CompilerOptions>
+</CONFIG>
