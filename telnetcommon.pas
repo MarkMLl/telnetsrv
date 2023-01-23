@@ -138,8 +138,10 @@ type
     *)
     Hangups: integer;
 
-    (* The threshold, in bytes received, before the OnAvailable event fires.
+    (* The threshold, in bytes (> 0) or lines (< 0) received, before the OnAvailable
+      event fires.
     *)
+
     Threshold: integer;
 
     (* Initially false, this must be set true before OnAvailable is operative and
