@@ -10,3 +10,5 @@ The server is also aware of POSIX capabilities, so may potentially be used with 
 An application program acting as a server may intercept a program's INPUT and OUTPUT text devices. This was originally intended as a debugging interface, but may also be used for e.g. planetarium control. See telnetdemo.lpr etc. for an example.
 
 A client program is presented with an API resembling the standard serial.pp interface, although additional facilities are available. See telnettest.lpr etc. for an example.
+
+KNOWN ISSUE: if a telnet server is destroyed it makes no attempt to restore the INPUT and OUTPUT devices.
