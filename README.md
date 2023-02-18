@@ -1,5 +1,5 @@
 # telnetsrv
-This provides moderately-competent Telnet server and client objects, adequate to replace the LNet implementation. Operation may be threaded or polled.
+This provides moderately-competent Telnet server and client objects, adequate to replace the LNet implementation. Operation may be threaded or (with limitations) polled.
 
 Both server and client include hooks which allow telnet option handlers to be defined, including support for the standard DO/DONT/WILL/WONT options, suboptions such as the terminal type, and the standard NVT controls. This has been tested with- as a specific example- a client program connecting to the Hercules terminal emulator.
 
@@ -11,4 +11,4 @@ An application program acting as a server may intercept a program's INPUT and OU
 
 A client program is presented with an API resembling the standard serial.pp interface, although additional facilities are available. See telnettest.lpr etc. for an example.
 
-KNOWN ISSUE: if a telnet server is destroyed it makes no attempt to restore the INPUT and OUTPUT devices.
+KNOWN ISSUE: if a telnet server is destroyed the INPUT and OUTPUT devices are restired, but this is minimally tested.
