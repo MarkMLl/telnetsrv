@@ -56,18 +56,18 @@ type
     *)
     procedure extend;
 
-    (* Assume that this is protected by a critical section in the caller.
+    (* Assume that this is protected by a critical section in its caller.
     *)
     procedure putByteNC(b: byte); inline;
 
-    (* Assume that this is protected by a critical section in the caller.
+    (* Assume that this is protected by a critical section in its caller.
     *)
     function getByteNC(): byte; inline;
 
     (* Examine a byte, the parameter must initially be -1 which is first set to
       nextGet and then incremented; this is for the purpose of counting the number
       of lines in the buffer and checking that at least the first is intact. Assume
-      that this is protected by a critical section in the caller.
+      that this is protected by a critical section in its caller.
     *)
     function peekByteNC(var getFrom: integer): byte; inline;
 
@@ -366,7 +366,7 @@ begin
 end { TByteBuffer.extend } ;
 
 
-(* Assume that this is protected by a critical section in the caller.
+(* Assume that this is protected by a critical section in its caller.
 *)
 procedure TByteBuffer.putByteNC(b: byte); inline;
 
@@ -417,7 +417,7 @@ begin
 end { TByteBuffer.PutByte } ;
 
 
-(* Assume that this is protected by a critical section in the caller.
+(* Assume that this is protected by a critical section in its caller.
 *)
 function TByteBuffer.getByteNC(): byte; inline;
 
@@ -441,7 +441,7 @@ end { TByteBuffer.getByteNC } ;
 (* Examine a byte, the parameter must initially be -1 which is first set to
   nextGet and then incremented; this is for the purpose of counting the number
   of lines in the buffer and checking that at least the first is intact. Assume
-  that this is protected by a critical section in the caller.
+  that this is protected by a critical section in its caller.
 *)
 function TByteBuffer.peekByteNC(var getFrom: integer): byte; inline;
 

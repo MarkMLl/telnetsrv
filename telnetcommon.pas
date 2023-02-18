@@ -19,6 +19,7 @@ uses
 
 const
   INVALID_SOCKET= -1;
+  GetNextByteDefaultValue= $55;         (* Printable character eases debugging  *)
 
   Iac= #255;
   IacDont= #254;
@@ -40,9 +41,22 @@ const
   IacDM= #242;                          (* Data mark                            *)
   IacNop= #241;                         (* No operation                         *)
 
+(* The various functions with timeouts each have a default, in mSec; this is    *)
+(* only really relevant to operation with a background thread. If operation is  *)
+(* polled, any attempt to use a timeout larger than the defined timeout will    *)
+(* be trapped by an assertion, if the timeout is less than the assertion it     *)
+(* won't have a direct effect but instead execution will pause for a defined    *)
+(* time before I/O status is checked.                                           *)
+
+  DefaultTimeout= 10;                   (* For ReadLnTimeout() etc., mSec       *)
+  TimeoutCutoff= DefaultTimeout;        (* Before error if Poll is being used   *)
+  PauseInLieu= DefaultTimeout;          (* Start of ReadLnTimeout() if Poll()   *)
+                                        (* is being used.                       *)
 type
   LineStates= (Reading, SeenIac, SeenIacReq);
   ReadLnStatus= (ReadLnIncomplete, ReadLnComplete, ReadLnTimedout);
+  BBlocking= (IsBlocking, IsDeferred);
+  TBlocking= set of BBlocking;
 
   TTelnetCommon= class;
   TelnetProc= procedure(telnet: TTelnetCommon; const option: AnsiString);
@@ -65,6 +79,7 @@ type
     fPortNumber: integer;
     inputBuffer: TByteBuffer;
     fOnline: boolean;                   (* Managed entirely by derived class    *)
+    fRunning: boolean;                  (* Is this relying on Poll()?           *)
     procedure SetOnline(goOnline: boolean); virtual; abstract;
     procedure Hangup(pause: integer=250); virtual; abstract;
 
@@ -85,14 +100,14 @@ type
 
        As a special case to support polled operation, the read may be deferred.
     *)
-    function getNextByte(out b: byte; deferRead: boolean= false): boolean; virtual; abstract;
+    function getNextByte(out b: byte; blocking: TBlocking= [IsBlocking]): boolean; virtual; abstract;
 
     (* This is a blocking call to read and process a single byte, filtering out
       Telnet IAC sequences etc. Return FALSE on error.
 
        As a special case to support polled operation, the read may be deferred.
     *)
-    function readAndEnqueue(deferRead: boolean= false): boolean;
+    function readAndEnqueue(blocking: TBlocking= [IsBlocking]): boolean;
 
     (* Clear the buffer between the background thread and foreground RTL etc.
     *)
@@ -141,7 +156,6 @@ type
     (* The threshold, in bytes (> 0) or lines (< 0) received, before the OnAvailable
       event fires.
     *)
-
     Threshold: integer;
 
     (* Initially false, this must be set true before OnAvailable is operative and
@@ -258,39 +272,51 @@ type
       indefinitely if it is -ve. Return false if nothing is available, noting
       that this might be subject to the client's LINEMODE option state etc.
 
+       Assume that this needs a background thread to handle timeouts reliably,
+      rather than relying on polled operation.
+
        This may be safely called from the main program thread, in the same way as
       ReadLn() and interleaved with WriteLn() etc. However calls to this function
       MUST NOT be interleaved with calls to ReadLn(), any attempt to do so will at
       best behave unpredictably.
     *)
-    function ReadCharTimeout(out c: AnsiChar; mSec: integer= 10): boolean;
+    function ReadCharTimeout(out c: AnsiChar; mSec: integer= DefaultTimeout): boolean;
 
     (* Read a single character, obeying the timeout if this is +ve or waiting
       indefinitely if it is -ve. Return zero if nothing is available, noting that
       this might be subject to the client's LINEMODE option state etc.
 
+       Assume that this needs a background thread to handle timeouts reliably,
+      rather than relying on polled operation.
+
        This may be safely called from the main program thread, in the same way as
       ReadLn() and interleaved with WriteLn() etc. However calls to this function
       MUST NOT be interleaved with calls to ReadLn(), any attempt to do so will at
       best behave unpredictably.
     *)
-    function ReadCharTimeout(mSec: integer= 10): AnsiChar;
+    function ReadCharTimeout(mSec: integer= DefaultTimeout): AnsiChar;
 
     (* Read a character at a time, accumulating it into the parameter. Return true
       when a complete line is available, noting that this might be subject to the
       client's LINEMODE option state etc.
 
+      Assume that this really needs a background thread to handle timeouts
+     reliably, rather than relying on polled operation.
+
        This may be safely called from the main program thread, in the same way as
       ReadLn() and interleaved with WriteLn() etc. However calls to this function
       MUST NOT be interleaved with calls to ReadLn(), any attempt to do so will at
       best behave unpredictably.
     *)
-    function ReadLnTimeout(var line: AnsiString; mSec: integer= 10;
+    function ReadLnTimeout(var line: AnsiString; mSec: integer= DefaultTimeout;
                                                 mSec2: integer= -1): ReadLnStatus;
 
     (* Read multiple characters, obeying the timeout if this is +ve or waiting
       indefinitely if it is -ve. Return zero if nothing is available, noting that
       this might be subject to the client's LINEMODE option state etc.
+
+      Assume that this needs a background thread to handle timeouts reliably,
+     rather than relying on polled operation.
 
        This may be safely called from the main program thread, in the same way as
       ReadLn() and interleaved with WriteLn() etc. However calls to this function
@@ -298,11 +324,14 @@ type
       best behave unpredictably.
     *)
     function ReadCharsTimeout(out buffer: array of AnsiChar; count: integer;
-                                                mSec: integer= 10): integer;
+                                                mSec: integer= DefaultTimeout): integer;
 
     (* Read multiple bytes, obeying the timeout if this is +ve or waiting
       indefinitely if it is -ve. Return zero if nothing is available, noting that
       this might be subject to the client's LINEMODE option state etc.
+
+       Assume that this needs a background thread to handle timeouts reliably,
+      rather than relying on polled operation.
 
        This may be safely called from the main program thread, in the same way as
       ReadLn() and interleaved with WriteLn() etc. However calls to this function
@@ -310,7 +339,7 @@ type
       best behave unpredictably.
     *)
     function ReadBytesTimeout(out buffer: array of byte; count: integer;
-                                                mSec: integer= 10): integer;
+                                                mSec: integer= DefaultTimeout): integer;
 
     (* This is the port that this end of the link is using, possibly randomised.
     *)
@@ -337,11 +366,31 @@ type
   *)
   ETelnetHangup= class(Exception);
 
+(* If the thread manager hasn't been installed then we can't safely initialise
+  TThread etc. Refer to use of CThreads in the main program.
+*)
+function ThreadManagerInstalled(): boolean;
+
 
 implementation
 
 uses
   UnixType {$ifdef LCL } , Forms {$endif } ;
+
+
+(* If the thread manager hasn't been installed then we can't safely initialise
+  TThread etc. Refer to use of CThreads in the main program.
+*)
+function ThreadManagerInstalled(): boolean;
+
+var
+  tm: TThreadManager;
+
+begin
+  result := false;
+  if GetThreadManager(tm{%H-}) then
+    result := Assigned(tm.InitManager)
+end { ThreadManagerInstalled } ;
 
 
 constructor TTelnetCommon.Create(CreateSuspended: boolean);
@@ -350,9 +399,11 @@ var
   i: integer;
 
 begin
-  inherited Create(CreateSuspended);
+  if ThreadManagerInstalled() then
+    inherited Create(CreateSuspended);
   fPortNumber := -1;
   fOnline := false;
+  fRunning := false;               (* Might be relying on Poll()                *)
   Threshold := 0;
   fOnAvailable := nil;
   AvailableEventPrimed := false;
@@ -524,7 +575,7 @@ end { TTelnetCommon.onAvailableShim } ;
 
   As a special case to support polled operation, the read may be deferred.
 *)
-function TTelnetCommon.readAndEnqueue(deferRead: boolean= false): boolean;
+function TTelnetCommon.readAndEnqueue(blocking: TBlocking= [IsBlocking]): boolean;
 
 var
   b: byte;
@@ -587,7 +638,7 @@ var
 (* the client should already have been warned off by a DONT or WONT response.   *)
 
       while not ((message[Length(message) - 1] = Iac) and (message[Length(message)] = iacSe)) do
-        if getNextByte(b) then          (* Blocking                             *)
+        if getNextByte(b, blocking) then (* Blocking                            *)
           message += AnsiChar(b);
 if Terminated then
   exit { (false) } ;
@@ -628,7 +679,7 @@ if Terminated then
           if GetCurrentThreadId() = MainThreadId then
             fOnAvailable(self, inputBuffer.BytesAvailable)
           else
-            Synchronize(@onAvailableShim) (* Using inputBuffer.BytesAvailable     *)
+            Synchronize(@onAvailableShim) (* Using inputBuffer.BytesAvailable   *)
         end
       end else                          (* Was a line-end just added?           *)
         if (b in [$00, $0a]) and (inputBuffer.LinesAvailable >= Abs(Threshold)) then begin
@@ -636,7 +687,7 @@ if Terminated then
           if GetCurrentThreadId() = MainThreadId then
             fOnAvailable(self, inputBuffer.BytesInFirstLine)
           else
-            Synchronize(@onAvailableShim) (* Using inputBuffer.LinesAvailable     *)
+            Synchronize(@onAvailableShim) (* Using inputBuffer.LinesAvailable   *)
         end
     end
   end { checkThreshold } ;
@@ -644,8 +695,15 @@ if Terminated then
 
 begin
   result := true;
-  if (not getNextByte(b, deferRead)) or deferRead then  (* Blocking             *)
+  if (not getNextByte(b, blocking)) or (IsDeferred in blocking) then (* Blocking *)
     exit;
+
+(* Debugging note: if b is 85 (0x55, ASCII 'U') here it might indicate that     *)
+(* getNextByte() has erroneously tried to return a default value even though    *)
+(* it's not been successful in reading a byte from the input socket or stdin.   *)
+
+  if b = GetNextByteDefaultValue then ;
+
   case lineState of
     Reading:     case b of
                    $ff: lineState := SeenIac;   (* Telnet IAC, handle specially *)
@@ -1033,8 +1091,14 @@ begin
   result := 0;
   pb := tpb(@buffer);
   try
-    while result < count do begin
-      while inputBuffer.BytesAvailable = 0 do
+    while (result < count) and not Terminated do begin
+
+(* If the background thread is not running, i.e. the program is relying on      *)
+(* polling, the only thing we can do here is return immediately. I'm not sure   *)
+(* that this is entirely right, so have tentatively left an assertion here.     *)
+
+//      Assert(fRunning, 'RecvBuffer() etc. might be incompatible with polled operation.');
+      while fRunning and (inputBuffer.BytesAvailable = 0) and not Terminated do
         wasteTime;
       pb^ := inputBuffer.GetByte();     (* Might result in an ETelnetHangup     *)
       Inc(pb);
@@ -1093,8 +1157,7 @@ end { TTelnetCommon.Recv } ;
 function TTelnetCommon.Recv(out line: AnsiString; count: longint; trim: boolean= false): longint;
 
 begin
-  if Length(line) < count then
-    SetLength(line, count);
+  SetLength(line, count);
   result := RecvBuffer(line[1], count);
   if result > 0 then
     SetLength(line, result)
@@ -1143,12 +1206,15 @@ end { GetTickCount64 } ;
   indefinitely if it is -ve. Return false if nothing is available, noting that
   this might be subject to the client's LINEMODE option state etc.
 
+   Assume that this needs a background thread to handle timeouts reliably,
+  rather than relying on polled operation.
+
    This may be safely called from the main program thread, in the same way as
   ReadLn() and interleaved with WriteLn() etc. However calls to this function
   MUST NOT be interleaved with calls to ReadLn(), any attempt to do so will at
   best behave unpredictably.
 *)
-function TTelnetCommon.ReadCharTimeout(out c: AnsiChar; mSec: integer= 10): boolean;
+function TTelnetCommon.ReadCharTimeout(out c: AnsiChar; mSec: integer= DefaultTimeout): boolean;
 
 var
   started: qword;
@@ -1172,8 +1238,23 @@ var
 begin
   if mSec < 0 then
     mSec := -1;
+
+(* A significant timeout will always be a problem if the background thread is   *)
+(* not running.                                                                 *)
+
+  if not fRunning then begin
+    if mSec > TimeoutCutoff then
+      Assert(fRunning, 'ReadCharTimeout() with a significant timeout is incompatible with polled operation.');
+    Sleep(PauseInLieu)
+  end;
+
+(* If the background thread is not running, i.e. the program is relying on      *)
+(* polling, the only thing we can do here is return immediately. I'm not sure   *)
+(* that this is entirely right, so have tentatively left an assertion here.     *)
+
+//  Assert(fRunning, 'ReadCharTimeout() etc. are incompatible with polled operation.');
   case mSec of
-    -1: while inputBuffer.BytesAvailable = 0 do
+    -1: while fRunning and  (inputBuffer.BytesAvailable = 0) and not Terminated do
           wasteTime;
      0: ;
   otherwise
@@ -1181,7 +1262,7 @@ begin
 {$push }
 {$rangechecks off}
 {$overflowchecks off }
-    while (inputBuffer.BytesAvailable = 0) and (mSec > GetTickCount64() - started) do
+    while fRunning and (inputBuffer.BytesAvailable = 0) and (mSec > GetTickCount64() - started) and not Terminated do
       wasteTime
 {$pop }
   end;
@@ -1196,12 +1277,15 @@ end { TTelnetCommon.ReadCharTimeout } ;
   indefinitely if it is -ve. Return zero if nothing is available, noting that
   this might be subject to the client's LINEMODE option state etc.
 
+   Assume that this needs a background thread to handle timeouts reliably,
+  rather than relying on polled operation.
+
    This may be safely called from the main program thread, in the same way as
   ReadLn() and interleaved with WriteLn() etc. However calls to this function
   MUST NOT be interleaved with calls to ReadLn(), any attempt to do so will at
   best behave unpredictably.
 *)
-function TTelnetCommon.ReadCharTimeout(mSec: integer= 10): AnsiChar;
+function TTelnetCommon.ReadCharTimeout(mSec: integer= DefaultTimeout): AnsiChar;
 
 var
   c: AnsiChar;
@@ -1218,12 +1302,15 @@ end { TTelnetCommon.ReadCharTimeout } ;
   when a complete line is available, noting that this might be subject to the
   client's LINEMODE option state etc.
 
+   Assume that this needs a background thread to handle timeouts reliably,
+  rather than relying on polled operation.
+
    This may be safely called from the main program thread, in the same way as
   ReadLn() and interleaved with WriteLn() etc. However calls to this function
   MUST NOT be interleaved with calls to ReadLn(), any attempt to do so will at
   best behave unpredictably.
 *)
-function TTelnetCommon.ReadLnTimeout(var line: AnsiString; mSec: integer= 10;
+function TTelnetCommon.ReadLnTimeout(var line: AnsiString; mSec: integer= DefaultTimeout;
                                                 mSec2: integer= -1): ReadLnStatus;
 
 label
@@ -1235,6 +1322,11 @@ var
 
 begin
   result := ReadLnIncomplete;
+  if not fRunning then begin
+    if mSec > TimeoutCutoff then
+      Assert(fRunning, 'ReadLnTimeout() with a significant timeout is incompatible with polled operation.');
+    Sleep(PauseInLieu)
+  end;
   if mSec2 < 0 then
     mSec2 := mSec;
   if line = '' then begin
@@ -1242,7 +1334,7 @@ begin
 (* Because a line may be terminated by either 0x0d 0x0a or 0x0d 0x00 (see       *)
 (* below), either 0x0a or 0x00 at the start of a line should be discarded with  *)
 (* no effect on timeout usage; I think I'd be justified in discarding all 0x0a  *)
-(* and 0x00 in non-binary mode but this seems like a resonable compromise.      *)
+(* and 0x00 in non-binary mode but this seems like a reasonable compromise.     *)
 (* Regrettably, a goto is probably the clearest way of expressing this.         *)
 
 bogusStartOfLine:
@@ -1286,19 +1378,27 @@ end { TTelnetCommon.ReadLnTimeout } ;
   indefinitely if it is -ve. Return zero if nothing is available, noting that
   this might be subject to the client's LINEMODE option state etc.
 
+   Assume that this needs a background thread to handle timeouts reliably,
+  rather than relying on polled operation.
+
    This may be safely called from the main program thread, in the same way as
   ReadLn() and interleaved with WriteLn() etc. However calls to this function
   MUST NOT be interleaved with calls to ReadLn(), any attempt to do so will at
   best behave unpredictably.
 *)
 function TTelnetCommon.ReadCharsTimeout(out buffer: array of AnsiChar; count: integer;
-                                            mSec: integer= 10): integer;
+                                            mSec: integer= DefaultTimeout): integer;
 
 var
   started: qword;
 
 begin
   result := 0;
+  if not fRunning then begin
+    if mSec > TimeoutCutoff then
+      Assert(fRunning, 'ReadCharsTimeout() with a significant timeout is incompatible with polled operation.');
+    Sleep(PauseInLieu)
+  end;
   if mSec < 0 then
     while result < count do
       result += Ord(ReadCharTimeout(buffer[result], -1))
@@ -1318,19 +1418,27 @@ end { TTelnetCommon.ReadCharsTimeout } ;
   indefinitely if it is -ve. Return zero if nothing is available, noting that
   this might be subject to the client's LINEMODE option state etc.
 
+   Assume that this needs a background thread to handle timeouts reliably,
+  rather than relying on polled operation.
+
    This may be safely called from the main program thread, in the same way as
   ReadLn() and interleaved with WriteLn() etc. However calls to this function
   MUST NOT be interleaved with calls to ReadLn(), any attempt to do so will at
   best behave unpredictably.
 *)
 function TTelnetCommon.ReadBytesTimeout(out buffer: array of byte; count: integer;
-                                            mSec: integer= 10): integer;
+                                            mSec: integer= DefaultTimeout): integer;
 
 var
   started: qword;
 
 begin
   result := 0;
+  if not fRunning then begin
+    if mSec > TimeoutCutoff then
+      Assert(fRunning, 'ReadBytesTimeout() with a significant timeout is incompatible with polled operation.');
+    Sleep(PauseInLieu)
+  end;
   if mSec < 0 then
     while result < count do
       result += Ord(ReadCharTimeout(AnsiChar(buffer[result]), -1))

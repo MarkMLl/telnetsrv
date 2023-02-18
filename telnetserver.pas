@@ -83,9 +83,10 @@ type
 
        As a special case to support polled operation, the read may be deferred.
     *)
-    function getNextByte(out b: byte; deferRead: boolean= false): boolean; override;
+    function getNextByte(out b: byte; blocking: TBlocking= [IsBlocking]): boolean; override;
 
   protected
+
     procedure SetOnline(goOnline: boolean); override;
 
     (* Accumulate and enqueue client messages, handling Telnet IACs etc. minimally.
@@ -95,6 +96,9 @@ type
     constructor Create(CreateSuspended: Boolean; var input, output: text;
                                                         port, pin: integer);
   public
+    fHandlesClosed: boolean;
+    fSavedInputTextRec: TextRec;        (* Have to be public to be accessible   *)
+    fSavedOutputTextRec: TextRec;       (* to helper.                           *)
 
     (* Normally true, progress messages such as the session PIN will be written to
       StdErr.
@@ -158,8 +162,13 @@ type
       that supports ReadLn() etc. This is a blocking call and returns true when a
       character has been buffered, it is an alternative to running a background
       thread.
+
+       Expect polled operation- whether blocking or non-blocking- to cause
+      problems for all sorts of things, in particular the RTL's ReadLn() and
+      all of the TTelnetCommon methods which ultimately rely on ReadCharTimeout()
+      due to having no obvious way to exit its timeout loop.
     *)
-    function Poll(): boolean;
+    function Poll(blocking: boolean= true): boolean;
 
     (* Return a response to a client, with optional CRLF termination, and with no
       escaping of embedded IAC characters. Return false if the response cannot be
@@ -217,16 +226,11 @@ type
 // 45678901234567890123456789012345678901234567890123456789012345678901234567890
 
 
-function threadManagerInstalled(): boolean;
-
-var
-  tm: TThreadManager;
+procedure uninitialisedFunction(var t: TextRec);
 
 begin
-  result := false;
-  if GetThreadManager(tm{%H-}) then
-    result := Assigned(tm.InitManager)
-end { threadManagerInstalled } ;
+  raise EAccessViolation.Create('I/O handler for ' + t.name + ' uninitialised')
+end { uninitialisedFunction } ;
 
 
 constructor TTelnetServer.Create(CreateSuspended: Boolean; var input, output: text;
@@ -234,11 +238,11 @@ constructor TTelnetServer.Create(CreateSuspended: Boolean; var input, output: te
 
 var
   i: integer;
-
-const                                   (* If we close stdin/stdout handles     *)
-  closeHandles= false;                  (* it will prevent us from using fpRead *)
-                                        (* etc. to get to the console should we *)
-begin                                   (* ever need to do that.                *)
+                                        (* If we close stdin/stdout handles     *)
+const                                   (* it will prevent us from using fpRead *)
+  closeHandles= false;                  (* etc. to get to the console should we *)
+                                        (* ever need to do that. Also the       *)
+begin                                   (* TextRecs won't be saved/restored.    *)
   inherited Create(CreateSuspended);
 
 (* The input and output parameters will normally be the program's predefined    *)
@@ -251,7 +255,7 @@ begin                                   (* ever need to do that.                
     fail;
   if not TextRecValid(output) then
     fail;
-  if threadManagerInstalled() then
+  if ThreadManagerInstalled() then
     inherited Create(CreateSuspended);
 
 (* It is rare for TThread.Create() to fail, but if it should then we must not   *)
@@ -261,8 +265,25 @@ begin                                   (* ever need to do that.                
 
   if not Assigned(self) then
     fail;
+  FillByte(fSavedInputTextRec, SizeOf(TextRec), 0);
+  with fSavedInputTextRec do begin
+    name := '### INPUT ###';
+    openfunc := @uninitialisedFunction;
+    inoutfunc := @uninitialisedFunction;
+    flushfunc := @uninitialisedFunction;
+    closefunc := @uninitialisedFunction
+  end;
+  FillByte(fSavedOutputTextRec, SizeOf(TextRec), 0);
+  with fSavedOutputTextRec do begin
+    name := '### OUTPUT ###';
+    openfunc := @uninitialisedFunction;
+    inoutfunc := @uninitialisedFunction;
+    flushfunc := @uninitialisedFunction;
+    closefunc := @uninitialisedFunction
+  end;
   ptrInput := @input;
   ptrOutput := @output;
+  fHandlesClosed := closeHandles;
   fPortNumber := port;
   if port >= 65536 then                 (* Randomise because of ephemeral port  *)
     Randomize;
@@ -312,7 +333,7 @@ destructor TTelnetServer.Destroy;
 
 begin
   SetOnline(false);
-  if threadManagerInstalled() then begin
+  if ThreadManagerInstalled() then begin
     Terminate;
 
 (* I was initially using                                                        *)
@@ -341,7 +362,8 @@ begin
     fpShutdown(fSocket, 2);
     CloseSocket(fSocket)
   end;
-  if threadManagerInstalled() then
+  UnbindTextRecs(self, input, output);
+  if ThreadManagerInstalled() then
     inherited Destroy
 end { TTelnetServer.Destroy } ;
 
@@ -401,6 +423,7 @@ procedure TTelnetServer.BufferFromPort;
 
 
 begin                           (* Influenced by FileReadFunc() in text.inc.    *)
+  Assert(fRunning, 'ReadLn() etc. are incompatible with polled operation.');
   FlushToPort;                          (* Nod to Nagle                         *)
 
 (* minNZ() always returns at least 1, so even if the input buffer is empty we   *)
@@ -485,7 +508,7 @@ end { TTelnetServer.FlushToPort } ;
 
   As a special case to support polled operation, the read may be deferred.
 *)
-function TTelnetServer.getNextByte(out b: byte; deferRead: boolean= false): boolean;
+function TTelnetServer.getNextByte(out b: byte; blocking: TBlocking= [IsBlocking]): boolean;
 
 label
   listenAgain;
@@ -496,6 +519,9 @@ const
 var
   sockAddr: TInetSockAddr;
   sockLen: longint;
+  readSet: TFDSet;
+  timeout: TTimeVal;
+  flags: cint;
   deferral: jmp_buf;
 
 
@@ -516,6 +542,8 @@ var
     scratch: string[3];
 
   begin
+    Assert(IsBlocking in blocking, 'PIN authentication and non-blocking poll not implemented.');
+// TODO : Non-blocking poll incompatible with PIN authentication.
     fpSend(fClient, @willEcho[1], 3, 0);
     fpRecv(fClient, @scratch[1], 3, 0); (* Ignore response                      *)
 
@@ -570,7 +598,7 @@ var
 
 begin
   result := true;
-  b := $55;                             (* Printable character eases debugging  *)
+  b := GetNextByteDefaultValue;         (* Printable character eases debugging  *)
   if deferredListen then
     LongJmp(deferral{%H-}, 1);
 
@@ -580,15 +608,30 @@ begin
 (* listening state will be deferred, but is enforced by the LongJmp() above.    *)
 
   if PortNumber < 0 then
-    if deferRead then
+    if IsDeferred in blocking then
       result := false
     else
-      repeat until fpRead(0, b, 1) = 1  (* Blocking call                        *)
+      repeat
+        if Terminated then
+          Raise ETelnetForcedTermination.Create('Forced thread termination while receiving');
+        if not (IsBlocking in blocking) then begin
+          fpFD_ZERO(readSet);
+          fpFD_SET(0, readSet);
+          timeout.tv_sec := 0;
+          timeout.tv_usec := 10000;
+          flags := fpSelect(1, @readSet, nil, nil, @timeout);
+          if flags < 0 then             (* Error, check for termination         *)
+            continue
+          else
+            if flags = 0 then           (* No character, return no character    *)
+              exit(false)
+        end
+      until fpRead(0, b, 1) = 1 (* Note: blocks but see "get out clause" above  *)
 // TODO : Does NL need to be converted to CR for stdin on unix?
   else begin
 listenAgain:
     case socketState of
-      Unbound:  Assert(true, 'Unexpected Unbound state in getNextByte()');
+      Unbound:  Assert(true, 'Unexpected Unbound state in getNextByte().');
       Bound:    while socketState < Accepted do begin
 
 (* The socket on which we are listening has been bound, and the UI has had the  *)
@@ -606,14 +649,28 @@ listenAgain:
                     fSessionPin := 1 + Random(9999);
                   if Assigned(fAnnounceCallback) then
                     fAnnounceCallback(self, IntToStr(fPortNumber) + ',' + pinToStr(fSessionPin));
+                  if IsBlocking in blocking then begin
+                    timeout.tv_sec := 0; (* Treat this as a blocking call       *)
+                    timeout.tv_usec := 0
+                  end else begin
+                    timeout.tv_sec := 0; (* Treat this as a non-blocking call   *)
+                    timeout.tv_usec := 10000 (* with this timeout in uSec.      *)
+                  end;
+                  if fpSetSockOpt(fSocket, SOL_SOCKET, SO_RCVTIMEO, @timeout, SizeOf(timeout)) < 0 then begin
+            {$if declared(StrError) }
+                    WriteLn(stderr, 'SetSockopt error ' + IntToStr(SocketError) + ': ' + StrError(SocketError))
+            {$endif declared        }
+                  end;
                   sockLen := SizeOf(sockAddr);
-                  fClient := fpAccept(fSocket, @sockAddr, @sockLen); (* Blocking call *)
+                  fClient := fpAccept(fSocket, @sockAddr, @sockLen); (* See timeout above *)
+                  if (fClient < 0) and not (IsBlocking in blocking) then
+                    exit(false);        (* No incoming connection, return no character *)
                   if Terminated then
                     Raise ETelnetForcedTermination.Create('Forced thread termination while accepting');
                   if fClient >= 0 then begin
                     fClientAddr := NetAddrToStr(sockAddr.sin_addr);
                     fClientPort := sockAddr.sin_port;
-                    socketState := Accepted;
+                    socketState := Accepted
                   end;
                   result := false
                 end;
@@ -636,6 +693,7 @@ listenAgain:
                     if ProgressOnStdErr then
                       WriteLn(StdErr, '# Session PIN is ', pinToStr(fSessionPin));
                     Respond('Enter session PIN: ');
+// TODO : Consider PIN state machine to allow non-blocking polled operation.
                     if readPin() <> fSessionPin then begin  (* Blocking call    *)
                       Respond(#$0d#$0a + 'PIN rejected.', true);
                       if ProgressOnStdErr then
@@ -662,12 +720,22 @@ listenAgain:
 (* with normal I/O, i.e. using either ReadLn(INPUT) or the additional calls     *)
 (* with timeouts etc.                                                           *)
 
-      if fpRecv(fClient, @b, 1, 0) < 1 then begin       (* Blocking call        *)
+      if IsBlocking in blocking then begin
+        flags := 0;
+        sockLen := 1                    (* Terminate if < 1 character received  *)
+      end else begin
+        flags := MSG_DONTWAIT;
+        sockLen := 0                    (* Terminate if result is -ve           *)
+      end;
+      flags := fpRecv(fClient, @b, 1, flags); (* Note: might or might not block *)
+      if flags < sockLen then begin     (* Result visible for debugging         *)
+        if (SocketError = ESysEAGAIN) and not (IsBlocking in blocking) then
+          exit(false);
         if Terminated then
           Raise ETelnetForcedTermination.Create('Forced thread termination while receiving');
         SetOnline(false);               (* Keep peer address info in case we    *)
-        CloseSocket(fClient);           (* want to reject reconnections from    *)
-        fClient := INVALID_SOCKET;      (* any other host.                      *)
+        CloseSocket(fClient);           (* want to only accept reconnection     *)
+        fClient := INVALID_SOCKET;      (* from the same host.                  *)
         socketState := Bound;
         clearBuffer;
         inputBuffer.Hungup;             (* Might result in an ETelnetHangup     *)
@@ -817,12 +885,13 @@ begin
     ReportPrivilege('Residual')         (* Was relinquish successful?           *)
   end;
   inputBuffer.BufferLimit := bufferLimit;
-  if threadManagerInstalled() then
+  if ThreadManagerInstalled() then
 {$if FPC_FULLVERSION >= 020600 }
-    Start
+    Start;
 {$else                         }
-    Resume
+    Resume;
 {$endif FPC_FULLVERSION        }
+  fRunning := true                      (* Not relying on Poll()                *)
 end { TTelnetServer.Run } ;
 
 
@@ -830,15 +899,30 @@ end { TTelnetServer.Run } ;
   that supports ReadLn() etc. This is a blocking call and returns true when a
   character has been buffered, it is an alternative to running a background
   thread.
-*)
-function TTelnetServer.Poll(): boolean;
 
-// TODO : Investigate whether the SCPI server has implemented a non-blocking poll.
+   Expect polled operation- whether blocking or non-blocking- to cause
+  problems for all sorts of things, in particular the RTL's ReadLn() and
+  all of the TTelnetCommon methods which ultimately rely on ReadCharTimeout()
+  due to having no obvious way to exit its timeout loop.
+*)
+function TTelnetServer.Poll(blocking: boolean= true): boolean;
+
+var
+  xBlocking: TBlocking= [IsBlocking];
+
+(* I could probably get away with casting true to [IsBlocking] here, but feel   *)
+(* that the risk is unjustified even if protected by an assertion.              *)
 
 begin
+  Assert(not fRunning, 'Poll() should not be used when a background thread is already running.');
+  if not blocking then
+    xBlocking := [];
   if PortNumber < 0 then begin
-    result := ReadAndEnqueue(not Online); (* False for initial poll only. Assume *)
-    SetOnline(true)                       (* that once online stdin never hangs up. *)
+    if not Online then
+      result := ReadAndEnqueue(xBlocking + [IsDeferred])
+    else
+      result := ReadAndEnqueue(xBlocking); (* False for initial poll only. Assume *)
+    SetOnline(true)                     (* that once online stdin never hangs up. *)
   end else
     if fSocket = INVALID_SOCKET then begin
       ReportPrivilege('Initial');       (* Initial state of program             *)
@@ -851,19 +935,16 @@ begin
       end
     end else
       try
-        result := ReadAndEnqueue(socketState < Authenticated)
+        if socketState < Authenticated then
+          result := ReadAndEnqueue(xBlocking + [IsDeferred])
+        else
+          result := ReadAndEnqueue(xBlocking)
       except
         on E: ETelnetForcedTermination do
           exit(false)
       else
         raise
-      end;
-
-// TODO : Can anything be done to allow Eoln/Eof to be used to poll input availability without breaking ReadLn()?
-
-    if Eoln(INPUT) then ;
-    if Eof(INPUT) then ;
-
+      end
 end { TTelnetServer.Poll } ;
 
 

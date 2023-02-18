@@ -57,7 +57,7 @@ type
 
       As a special case to support polled operation, the read may be deferred.
     *)
-    function getNextByte(out b: byte; deferRead: boolean= false): boolean; override;
+    function getNextByte(out b: byte; blocking: TBlocking= [IsBlocking]): boolean; override;
 
   public
 
@@ -240,7 +240,7 @@ end { TTelnetClient.SetOnline } ;
 
   As a special case to support polled operation, the read may be deferred.
 *)
-function TTelnetClient.getNextByte(out b: byte; deferRead: boolean= false): boolean;
+function TTelnetClient.getNextByte(out b: byte; blocking: TBlocking= [IsBlocking]): boolean;
 
 const
   deferredListen: boolean= false;       (* Static variable                      *)
@@ -250,8 +250,9 @@ var
   deferral: jmp_buf;
 
 begin
+  Assert(IsBlocking in blocking, 'Non-blocking poll not implemented.');
   result := true;
-  b := $55;                             (* Printable character eases debugging  *)
+  b := GetNextByteDefaultValue;         (* Printable character eases debugging  *)
   if deferredListen then
     LongJmp(deferral{%H-}, 1);
 
@@ -274,6 +275,7 @@ begin
     end;
     result := false
   end else begin
+// TODO : No provision for non-blocking poll (as alternative to background thread) here.
     if fpRecv(fClient, @b, 1, 0) < 1 then begin         (* Blocking call        *)
       if Terminated then
         Raise ETelnetForcedTermination.Create('forced Termination while reading');
@@ -349,10 +351,11 @@ begin
   result := true;
   inputBuffer.BufferLimit := bufferLimit;
 {$if FPC_FULLVERSION >= 020600 }
-  Start
+  Start;
 {$else                         }
-  Resume
+  Resume;
 {$endif FPC_FULLVERSION        }
+  fRunning := true                      (* Not relying on Poll()                *)
 end { TTelnetClient.Run } ;
 
 

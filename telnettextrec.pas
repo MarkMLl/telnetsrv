@@ -25,11 +25,24 @@ function TextRecValid(var t: Text; testHandle: boolean= true;
 procedure BindTextRecs(server: TTelnetServer; var input, output: text;
                                         closeHandles: boolean; port: integer);
 
+(* Restore as much INPUT and OUTPUT context as possible. Assume that this will
+  not result in usable I/O capability if the handles were closed.
+*)
+procedure UnbindTextRecs(server: TTelnetServer; var input, output: text);
+
 
 implementation
 
 uses
   BaseUnix;
+
+type
+  TTelnetServerH=
+    class helper for TTelnetServer
+    protected
+      procedure saveTextRec(const source: TextRec; out dest: TextRec);
+      procedure restoreTextRec(const source: TextRec; out dest: TextRec);
+    end;
 
 
 (* Check that the structure of a TextRec, intended to be opaque by the FPC
@@ -205,7 +218,9 @@ begin
       if name = '' then
         name := 'handle ' + inttostr(Handle);
       if closeHandles then
-        fpClose(Handle);
+        fpClose(Handle)
+      else
+        server.saveTextRec(TextRec(input), server.fSavedInputTextRec);
       Handle := UnusedHandle;           (* No longer used by this text device   *)
       if port < 0 then
         name := 'Handle 0 (was ' + name + ')' (* Name saved for debugging       *)
@@ -223,7 +238,9 @@ begin
       if name = '' then
         name := 'handle ' + inttostr(Handle);
       if closeHandles then
-        fpClose(Handle);
+        fpClose(Handle)
+      else
+        server.saveTextRec(TextRec(output), server.fSavedOutputTextRec);
       Handle := UnusedHandle;           (* No longer used by this text device   *)
       if port < 0 then
         name := 'Handle 1 (was ' + name + ')' (* Name saved for debugging       *)
@@ -237,6 +254,43 @@ begin
       FlushFunc := @textFlushToPort
     end
 end { BindTextRecs } ;
+
+
+(* Restore as much INPUT and OUTPUT context as possible. Assume that this will
+  not result in usable I/O capability if the handles were closed.
+*)
+procedure UnbindTextRecs(server: TTelnetServer; var input, output: text);
+
+begin
+  if Assigned(@input) and not server.fHandlesClosed then
+    server.restoreTextRec(server.fSavedInputTextRec, TextRec(input));
+  if Assigned(@output) and not server.fHandlesClosed then
+    server.restoreTextRec(server.fSavedOutputTextRec, TextRec(output))
+end { UnbindTextRecs } ;
+
+
+procedure TTelnetServerH.saveTextRec(const source: TextRec; out dest: TextRec);
+
+// TODO : TextRec structures restoration largely untested.
+// However probably unusable if closeHandles was true.
+
+begin
+  Move(source, dest, SizeOf(TextRec))
+end { TTelnetServerH.saveTextRec } ;
+
+
+procedure TTelnetServerH.restoreTextRec(const source: TextRec; out dest: TextRec);
+
+begin
+  if source.bufPtr <> nil then begin    (* Was anything actually saved?         *)
+    Move(source, dest, SizeOf(TextRec));
+    with dest do begin
+      buffer := bufPtr^;
+      bufend := 0;
+      bufPos := 0
+    end
+  end
+end { TTelnetServerH.restoreTextRec } ;
 
 
 end.

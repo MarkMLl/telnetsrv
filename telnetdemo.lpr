@@ -7,27 +7,31 @@ program telnetdemo;
 {$mode objfpc}{$H+}
 
 (* Below: this must work both without and with an imported thread manager:      *)
-(* treat successful operation of both LOGIN_POLLED and LOGIN_THREADED, with the *)
-(* port in both cases being set to -1 (use stdin/stdout) and then some port in  *)
-(* the range 1024..65535, as minimal prerequisites (i.e. four tests total).     *)
+(* treat successful operation of both LOGIN_POLLED_BLOCKING and LOGIN_THREADED, *)
+(* with the port in both cases being set to -1 (use stdin/stdout) and then some *)
+(* port in the range 1024..65535, as minimal prerequisites (i.e. four tests     *)
+(* total).                                                                      *)
 (*                                                                              *)
 (* Also test with the port >= 65536 to ensure than random port selection works  *)
 (* correctly, and with either a fixed session PIN in the range 1..9999 or with  *)
 (* -1 for a random number.                                                      *)
 
-{ define LOGIN_POLLED }                 (* Enable precisely one of these tests  *)
-{$define LOGIN_THREADED }
+{$define LOGIN_THREADED }               (* Enable precisely one of these tests  *)
+{ define LOGIN_POLLED_BLOCKING }
+{ define LOGIN_POLLED_NONBLOCKING }
 { define ECHO_LINE_THREADED }
 { define ECHO_STRING_THREADED }
 { define ECHO_BYTES_THREADED }
 
-{$ifndef LOGIN_POLLED }
-  {$define USETHREAD  }
-{$endif LOGIN_POLLED  }
+{$if defined(LOGIN_POLLED_BLOCKING) or defined(LOGIN_POLLED_NONBLOCKING) }
+  {$define LOGIN_POLLED }
+{$else }
+  {$define USETHREAD }
+{$endif }
 
-{$if defined(LOGIN_POLLED) or defined(LOGIN_THREADED)    }
+{$if defined(LOGIN_POLLED_BLOCKING) or defined(LOGIN_THREADED) }
   {$define WANT_PIN }
-{$endif defined(LOGIN_POLLED) or defined(LOGIN_THREADED) }
+{$endif }
 
 uses
 {$ifdef USETHREAD }
@@ -35,10 +39,16 @@ uses
   cthreads,
   {$ENDIF}
 {$endif USETHREAD }
-  Classes
-  { you can add units after this }
-  , SysUtils, TelnetServer, TelnetBuffer, TelnetTextRec, TelnetPrivs,
+  Classes, SysUtils, TelnetServer, TelnetBuffer, TelnetTextRec, TelnetPrivs,
   TelnetCommon, DynamicModule, LibCapDynamic;
+
+{$ifdef LOGIN_POLLED_BLOCKING }
+const
+  pollBlocks= true;
+{$else }
+const
+  pollBlocks= false;
+{$endif LOGIN_POLLED_BLOCKING }
 
 var
   telnetPort: integer= 9965023;         (* >= 65536 is randomised socket        *)
@@ -61,20 +71,26 @@ procedure testProc;
 
 begin
   while not telnet.Online do
-    telnet.Poll();
+    telnet.Poll(pollBlocks);
   Write('Polled bogus login: ');
   response := '';
-  while not telnet.ReadLnTimeout(response) do
-    telnet.Poll;
-  Write('Password: ');
-  response := '';
-// TODO : Refer to display-calibration for echo/linemode manipulation.
+  while telnet.ReadLnTimeout(response) <> ReadLnComplete do
+    telnet.Poll(pollBlocks);
   try
-    while not telnet.ReadLnTimeout(response) do
-      telnet.Poll
+    Write('Bogus password: ');
+    response := '';
+
+// There are ongoing problems with trying to get timeouts working with polled
+// operation. The polls below will have to be non-blocking in all cases, but
+// whenever wasteTime is called in TTelnetCommon.ReadCharTimeout() it will loop
+// until timed out.
+
+    while telnet.ReadLnTimeout(response) <> ReadLnComplete do
+      telnet.Poll(pollBlocks)
   finally
   end;
-  Write(#$0d + #$0a + #$0d + #$0a);     (* SunOS/Solaris only has one CRLF here *)
+// One of the CRLFs is suppressed here pending telling the client not to echo.
+  Write({ #$0d + #$0a + } #$0d + #$0a);     (* SunOS/Solaris only has one CRLF here *)
   Write('Login incorrect' + #$0d + #$0a);
   telnet.Hangup
 end { testProc } ;
@@ -157,7 +173,7 @@ S: login:<sp>
     telnet.Respond(#255#251#1)          (* IAC WILL ECHO                        *)
   end;
   try
-    Write('Password: ');
+    Write('Bogus password: ');
     response := '';
     repeat
       case telnet.ReadLnTimeout(response, 5000, 2500) of
@@ -415,10 +431,10 @@ begin
         else
           WriteLn(StdErr, '# Unable to run Telnet server on port ', telnet.PortNumber)
 {$else            }
-      telnet.Poll();
+      telnet.Poll(pollBlocks);
       if telnetPort >= 0 then
         WriteLn(StdErr, '# Expecting user connection to port ', telnet.PortNumber);
-      telnet.Poll();
+      telnet.Poll(pollBlocks);
       repeat
         testProc
       until telnet.Finished             (* Repeat until explicitly terminated   *)
