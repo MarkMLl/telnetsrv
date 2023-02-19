@@ -61,6 +61,7 @@ type
   strict private
     socketState: SocketStates;
     fSocket: TSocket;
+    fOwnAddr: AnsiString;
     fClientAddr: AnsiString;
     fClientPort: integer;
     fPin: integer;
@@ -187,6 +188,10 @@ type
     *)
     procedure SetOnAvailable(onAvailable: AvailableProc);
 
+    (* This identifies the server's IP addresses as a space-separated string.
+    *)
+    property OwnAddr: AnsiString read fOwnAddr;
+
     (* This identifies the client at the other end of the current link.
     *)
     property ClientAddr: AnsiString read fClientAddr;
@@ -215,7 +220,7 @@ type
 implementation
 
 uses
-  TelnetTextRec, TelnetPrivs, BaseUnix { , Errors }
+  TelnetTextRec, TelnetPrivs, BaseUnix, ipaddressutils { , Errors }
                                         {$ifdef LCL } , Forms {$endif LCL } ;
 
 type
@@ -293,6 +298,7 @@ begin                                   (* TextRecs won't be saved/restored.    
   ProgressOnStdErr := true;
   fSocket := INVALID_SOCKET;
   fClient := INVALID_SOCKET;
+  fOwnAddr := '';
   fClientAddr := '';
   fClientPort := -1;
   fPin := pin;
@@ -859,6 +865,7 @@ begin
         socketState := Bound;
         if fPin < 0 then
           Randomize;
+        fOwnAddr := GetOwnIpAddresses(true);
         exit(true)                      (* Opened port successfully             *)
       end
     end

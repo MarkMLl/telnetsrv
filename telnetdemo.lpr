@@ -40,7 +40,7 @@ uses
   {$ENDIF}
 {$endif USETHREAD }
   Classes, SysUtils, TelnetServer, TelnetBuffer, TelnetTextRec, TelnetPrivs,
-  TelnetCommon, DynamicModule, LibCapDynamic;
+  TelnetCommon, ipaddressutils, DynamicModule, LibCapDynamic;
 
 {$ifdef LOGIN_POLLED_BLOCKING }
 const
@@ -420,6 +420,11 @@ begin
 
 {$ifdef USETHREAD }
       if telnet.Run() then begin
+        if telnet.OwnAddr <> '' then
+          if Pos(' ', telnet.OwnAddr) > 0 then
+            WriteLn(StdErr, '# Listening on IP addresses ', telnet.OwnAddr)
+          else
+            WriteLn(StdErr, '# Listening on IP address ', telnet.OwnAddr);
         if telnetPort >= 0 then
           WriteLn(StdErr, '# Expecting user connection to port ', telnet.PortNumber);
         repeat
@@ -432,6 +437,11 @@ begin
           WriteLn(StdErr, '# Unable to run Telnet server on port ', telnet.PortNumber)
 {$else            }
       telnet.Poll(pollBlocks);
+      if telnet.OwnAddr <> '' then
+        if Pos(' ', telnet.OwnAddr) > 0 then
+          WriteLn(StdErr, '# Listening on IP addresses ', telnet.OwnAddr)
+        else
+          WriteLn(StdErr, '# Listening on IP address ', telnet.OwnAddr);
       if telnetPort >= 0 then
         WriteLn(StdErr, '# Expecting user connection to port ', telnet.PortNumber);
       telnet.Poll(pollBlocks);
