@@ -32,8 +32,8 @@ any: Makefile
 
 $(TARGET):any telnetserver.pas telnetclient.pas telnetcommon.pas \
   clientoptionhandlers.inc serveroptionhandlers.inc \
-  telnetbuffer.pas telnettextrec.pas telnetprivs.pas libcapdynamic.pas \
-  libcap.pas libcapshim.pas telnetdemo.lpr telnettest.lpr
+  telnetbuffer.pas telnettextrec.pas telnetprivs.pas ipaddressutils.pas \
+  libcapdynamic.pas libcap.pas libcapshim.pas telnetdemo.lpr telnettest.lpr
 	$(FPC) $(FPCFLAGS) $(DEFINES) -o$(TARGET) $_.lpr 
 
 test: $(TARGET)
@@ -45,8 +45,9 @@ clean:
 	rm -f telnetdemo.o telnettest.o telnetserver.ppu telnetserver.o \
   telnetclient.ppu telnetclient.o telnetcommon.ppu telnetcommon.o \
   telnetbuffer.ppu telnetbuffer.o telnettextrec.ppu telnettextrec.o \
-  telnetprivs.ppu telnetprivs.o libcapdynamic.ppu libcapdynamic.o libcap.ppu \
-  libcap.o libcapshim.ppu libcapshim.o project_svnrevision.inc fpc_svnrevision.inc
+  telnetprivs.ppu telnetprivs.o ipaddressutils.o ipaddressutils.ppu \
+  libcapdynamic.ppu libcapdynamic.o libcap.ppu libcap.o \
+  libcapshim.ppu libcapshim.o project_svnrevision.inc fpc_svnrevision.inc
                 
 distclean: clean
 	rm -f $(TARGET)* telnettest-* *lps $_.tar $_.tar.gz $_.tgz $_.zip
