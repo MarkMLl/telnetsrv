@@ -401,7 +401,14 @@ begin
   if telnetPort = -1 then
     WriteLn(StdErr, '# Starting Telnet daemon on standard I/O')
   else
-    WriteLn(StdErr, '# Starting Telnet daemon');
+    if telnetPort > 65535 then
+      WriteLn(StdErr, '# Starting Telnet daemon')
+    else
+      WriteLn(StdErr, '# Starting Telnet daemon on port ', telnetPort);
+
+(* If the telnet port has been specified explicitly then tell the user as early *)
+(* as possible since a clash might prevent the daemon from being started.       *)
+
   telnet := TTelnetServer.Create(INPUT, OUTPUT, telnetPort, telnetPin);
   if Assigned(telnet) then
     try
@@ -420,13 +427,15 @@ begin
 
 {$ifdef USETHREAD }
       if telnet.Run() then begin
-        if telnet.OwnAddr <> '' then
-          if Pos(' ', telnet.OwnAddr) > 0 then
-            WriteLn(StdErr, '# Listening on IP addresses ', telnet.OwnAddr)
-          else
-            WriteLn(StdErr, '# Listening on IP address ', telnet.OwnAddr);
-        if telnetPort >= 0 then
-          WriteLn(StdErr, '# Expecting user connection to port ', telnet.PortNumber);
+        if telnetPort >= 0 then begin
+          if telnet.OwnAddr <> '' then
+            if Pos(' ', telnet.OwnAddr) > 0 then
+              WriteLn(StdErr, '# Listening on IP addresses ', telnet.OwnAddr)
+            else
+              WriteLn(StdErr, '# Listening on IP address ', telnet.OwnAddr);
+          if telnetPort > 65535 then    (* Tell user actaul port number         *)
+            WriteLn(StdErr, '# Expecting user connection to port ', telnet.PortNumber)
+        end;
         repeat
           testProc
         until telnet.Finished           (* Repeat until explicitly terminated   *)
@@ -437,13 +446,14 @@ begin
           WriteLn(StdErr, '# Unable to run Telnet server on port ', telnet.PortNumber)
 {$else            }
       telnet.Poll(pollBlocks);
-      if telnet.OwnAddr <> '' then
-        if Pos(' ', telnet.OwnAddr) > 0 then
-          WriteLn(StdErr, '# Listening on IP addresses ', telnet.OwnAddr)
-        else
-          WriteLn(StdErr, '# Listening on IP address ', telnet.OwnAddr);
-      if telnetPort >= 0 then
-        WriteLn(StdErr, '# Expecting user connection to port ', telnet.PortNumber);
+      if telnetPort >= 0 then begin
+        if telnet.OwnAddr <> '' then
+          if Pos(' ', telnet.OwnAddr) > 0 then
+            WriteLn(StdErr, '# Listening on IP addresses ', telnet.OwnAddr)
+          else
+            WriteLn(StdErr, '# Listening on IP address ', telnet.OwnAddr);
+        WriteLn(StdErr, '# Expecting user connection to port ', telnet.PortNumber)
+      end;
       telnet.Poll(pollBlocks);
       repeat
         testProc
