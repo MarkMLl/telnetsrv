@@ -620,9 +620,9 @@ var
         end else begin
           case iacReq of
             IacDo,
-            IacDont: message := Iac + IacDont;
+            IacDont: message := Iac + IacWont;
             IacWill,
-            IacWont: message := Iac + IacWont;
+            IacWont: message := Iac + IacDont;
           otherwise
             exit
           end;
