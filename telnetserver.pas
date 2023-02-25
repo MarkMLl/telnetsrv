@@ -24,6 +24,11 @@ unit TelnetServer;
 
 {$if FPC_FULLVERSION < 030000 }
 {$warning Possible reliability problems with FPC older than 3.0.0. }
+
+(* If this is defined then there will be no attempt to map INPUT and OUTPUT to  *)
+(* the Telnet daemon, but the remainder of the API should still work.           *)
+
+{ define NO_TEXTREC }
 {$endif FPC_FULLVERSION       }
 
 {$mode objfpc}{$H+}
@@ -188,7 +193,7 @@ type
     *)
     procedure SetOnAvailable(onAvailable: AvailableProc);
 
-    (* This identifies the server's IP addresses as a space-separated string.
+    (* This identifies the server's IP addresses as a comma/space-separated string.
     *)
     property OwnAddr: AnsiString read fOwnAddr;
 
@@ -220,8 +225,8 @@ type
 implementation
 
 uses
-  TelnetTextRec, TelnetPrivs, BaseUnix, ipaddressutils { , Errors }
-                                        {$ifdef LCL } , Forms {$endif LCL } ;
+  {$ifndef NO_TEXTREC } TelnetTextRec, {$endif NO_TEXTREC } TelnetPrivs, BaseUnix,
+                ipaddressutils { , Errors } {$ifdef LCL } , Forms {$endif LCL } ;
 
 type
   ETelnetForcedTermination= class(Exception);
@@ -256,10 +261,12 @@ begin                                   (* TextRecs won't be saved/restored.    
 (* we are able, since in theory at least it is intended for internal use by the *)
 (* RTL only.                                                                    *)
 
+{$ifndef NO_TEXTREC }
   if not TextRecValid(input) then       (* Will accept NOPUT as valid parameter *)
     fail;
   if not TextRecValid(output) then
     fail;
+{$endif NO_TEXTREC  }
   if ThreadManagerInstalled() then
     inherited Create(CreateSuspended);
 
@@ -292,7 +299,9 @@ begin                                   (* TextRecs won't be saved/restored.    
   fPortNumber := port;
   if port >= 65536 then                 (* Randomise because of ephemeral port  *)
     Randomize;
+{$ifndef NO_TEXTREC }
   BindTextRecs(self, input, output, closeHandles, fPortNumber);
+{$endif NO_TEXTREC  }
   if (port >= 0) and (ptrOutput <> nil) then
     SetTextLineEnding(output, #$0d#$0a);
   ProgressOnStdErr := true;
@@ -368,7 +377,9 @@ begin
     fpShutdown(fSocket, 2);
     CloseSocket(fSocket)
   end;
+{$ifndef NO_TEXTREC }
   UnbindTextRecs(self, input, output);
+{$endif NO_TEXTREC  }
   if ThreadManagerInstalled() then
     inherited Destroy
 end { TTelnetServer.Destroy } ;
@@ -947,9 +958,11 @@ begin
         else
           result := ReadAndEnqueue(xBlocking)
       except
+{$if FPC_FULLVERSION >= 030000 }
         on E: ETelnetForcedTermination do
           exit(false)
       else
+{$endif FPC_FULLVERSION        }
         raise
       end
 end { TTelnetServer.Poll } ;

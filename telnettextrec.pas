@@ -36,6 +36,7 @@ implementation
 uses
   BaseUnix;
 
+{$if FPC_FULLVERSION >= 030000 }
 type
   TTelnetServerH=
     class helper for TTelnetServer
@@ -43,6 +44,9 @@ type
       procedure saveTextRec(const source: TextRec; out dest: TextRec);
       procedure restoreTextRec(const source: TextRec; out dest: TextRec);
     end;
+{$else                         }
+{$warning Class helpers unimplemented by this compiler version. }
+{$endif FPC_FULLVERSION        }
 
 
 (* Check that the structure of a TextRec, intended to be opaque by the FPC
@@ -219,8 +223,11 @@ begin
         name := 'handle ' + inttostr(Handle);
       if closeHandles then
         fpClose(Handle)
-      else
-        server.saveTextRec(TextRec(input), server.fSavedInputTextRec);
+      else begin
+{$if FPC_FULLVERSION >= 030000 }
+        server.saveTextRec(TextRec(input), server.fSavedInputTextRec)
+{$endif FPC_FULLVERSION        }
+      end;
       Handle := UnusedHandle;           (* No longer used by this text device   *)
       if port < 0 then
         name := 'Handle 0 (was ' + name + ')' (* Name saved for debugging       *)
@@ -239,8 +246,11 @@ begin
         name := 'handle ' + inttostr(Handle);
       if closeHandles then
         fpClose(Handle)
-      else
-        server.saveTextRec(TextRec(output), server.fSavedOutputTextRec);
+      else begin
+{$if FPC_FULLVERSION >= 030000 }
+        server.saveTextRec(TextRec(output), server.fSavedOutputTextRec)
+{$endif FPC_FULLVERSION        }
+      end;
       Handle := UnusedHandle;           (* No longer used by this text device   *)
       if port < 0 then
         name := 'Handle 1 (was ' + name + ')' (* Name saved for debugging       *)
@@ -262,12 +272,16 @@ end { BindTextRecs } ;
 procedure UnbindTextRecs(server: TTelnetServer; var input, output: text);
 
 begin
+{$if FPC_FULLVERSION >= 030000 }
   if Assigned(@input) and not server.fHandlesClosed then
     server.restoreTextRec(server.fSavedInputTextRec, TextRec(input));
   if Assigned(@output) and not server.fHandlesClosed then
     server.restoreTextRec(server.fSavedOutputTextRec, TextRec(output))
+{$endif FPC_FULLVERSION        }
 end { UnbindTextRecs } ;
 
+
+{$if FPC_FULLVERSION >= 030000 }
 
 procedure TTelnetServerH.saveTextRec(const source: TextRec; out dest: TextRec);
 
@@ -291,6 +305,8 @@ begin
     end
   end
 end { TTelnetServerH.restoreTextRec } ;
+
+{$endif FPC_FULLVERSION        }
 
 
 end.
