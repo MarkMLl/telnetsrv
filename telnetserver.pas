@@ -255,6 +255,8 @@ const                                   (* it will prevent us from using fpRead 
 begin                                   (* TextRecs won't be saved/restored.    *)
   inherited Create(CreateSuspended);
 
+// TODO : Why is this being called twice?
+
 (* The input and output parameters will normally be the program's predefined    *)
 (* INPUT and OUTPUT text devices, but need not be. In any event we need to      *)
 (* check the TextRec object for the expected structure and behaviour as far as  *)
@@ -530,8 +532,35 @@ function TTelnetServer.getNextByte(out b: byte; blocking: TBlocking= [IsBlocking
 label
   listenAgain;
 
+(* The structure of a jmp_buf is architecture-specific, regrettably there is no *)
+(* predefined constant defining a dummy so at the very least we have to know    *)
+(* the name of the first field. Refer to setjump.inc or setjumph.inc etc. in    *)
+(* the FPC RTL.                                                                 *)
+
+{$ifdef CPUI386 }                       (* Believed correct as of FPC 3.2.2     *)
+  {$ifndef GO32V2 }
+    {$define JMP_BUF_DUMMY := (ebx: 0{%H-}) }
+  {$else }
+    {$define JMP_BUF_DUMMY := (eax: 0{%H-}) }
+  {$endif GO32V2  }
+{$endif CPUI386 }
+{$ifdef CPUX64 }
+  {$define JMP_BUF_DUMMY := (rbx: 0{%H-}) }
+{$endif CPUX64 }
+{$ifdef CPUARM }
+{$if defined(FPUVFPV2) or defined(FPUVFPV3) or defined(FPUVFPV4) or defined(FPUVFPV3_D16)}
+  {$define JMP_BUF_DUMMY := (d8: 0{%H-}) }
+{$else }
+  {$define JMP_BUF_DUMMY := (v1: 0{%H-}) }
+{$endif }
+{$endif CPUARM }
+{$ifdef CPUAVR }
+  {$define JMP_BUF_DUMMY := (r1: 0{%H-}) }
+{$endif CPUAVR }
+
 const
   deferredListen: boolean= false;       (* Static variable                      *)
+  deferral: jmp_buf= JMP_BUF_DUMMY;     (* Static variable                      *)
 
 var
   sockAddr: TInetSockAddr;
@@ -539,7 +568,6 @@ var
   readSet: TFDSet;
   timeout: TTimeVal;
   flags: cint;
-  deferral: jmp_buf;
 
 
   (* Read a PIN terminated by any non-digit, return -1 if malformed.
@@ -657,6 +685,17 @@ listenAgain:
 (* be listened on and what PIN will be expected, this might e.g. be written to  *)
 (* a file which could be passed to a collaborating client as a form of two-     *)
 (* factor authentication.                                                       *)
+
+{ TODO : Might be useful to be able to handle a larger queued backlog. }
+// This is probably not desirable in the case of the text-based APIs unless
+// somebody is intent on creating a large number of I/O connections in addition
+// to the standard INPUT and OUTPUT: I think that at least some BBSes might
+// have worked like that before multitasking OSes were widely available. It is
+// probably not necessary if the non-text API is to be used, since by definition
+// we have an underlying multitasking OS which is probably some species of unix
+// it might make more sense to start multiple instances of this program using
+// either (x)inetd or systemd: see http://0pointer.de/blog/projects/inetd.html
+// for a discussion using SSH as an example.
 
                   while fpListen(fSocket, 1) <> 0 do
                     if Terminated then
